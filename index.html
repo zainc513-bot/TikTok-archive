@@ -309,7 +309,7 @@
 </style>
 </head>
 <body>
-<div style="position:fixed;top:6px;left:8px;font-size:10px;color:#7d7461;z-index:999;font-family:'Space Mono',monospace;">build v15 — smart hashtag grouping, month auto-cascade, faster fetch</div>
+<div style="position:fixed;top:6px;left:8px;font-size:10px;color:#7d7461;z-index:999;font-family:'Space Mono',monospace;">build v16 — pause/resume per-month queue, priority loading</div>
 <div class="wrap">
 
   <div class="masthead">
@@ -538,7 +538,7 @@ function tryChainNextMonth(monthDiv){
   if(next._build) next._build(); // no-op if it's already built/loading
 }
 
-function queueThumbnail(entry, cardEl, onSettled){
+function queueThumbnail(entry, cardEl, onSettled, monthDiv, priority){
   if(!entry.link){ if(onSettled) onSettled(); return; }
   const cached = oembedCache.get(entry.link);
   if(cached){
@@ -546,8 +546,35 @@ function queueThumbnail(entry, cardEl, onSettled){
     if(onSettled) onSettled();
     return;
   }
-  fetchQueue.push({entry, cardEl, onSettled});
+  const item = {entry, cardEl, onSettled, monthDiv};
+  if(priority) fetchQueue.unshift(item);
+  else fetchQueue.push(item);
   processQueue();
+}
+
+// Called when a month is collapsed: pulls its not-yet-started items out of the
+// shared queue so a big collapsed month doesn't hold up whatever you open next.
+// They're kept aside and put back at the front of the line if you reopen it.
+function pauseMonth(monthDiv){
+  const kept = [];
+  const removed = [];
+  fetchQueue.forEach(item=>{
+    if(item.monthDiv === monthDiv) removed.push(item);
+    else kept.push(item);
+  });
+  fetchQueue.length = 0;
+  fetchQueue.push(...kept);
+  if(removed.length){
+    monthDiv._pausedItems = (monthDiv._pausedItems || []).concat(removed);
+  }
+}
+
+function resumeMonth(monthDiv){
+  if(monthDiv._pausedItems && monthDiv._pausedItems.length){
+    fetchQueue.unshift(...monthDiv._pausedItems);
+    monthDiv._pausedItems = [];
+    processQueue();
+  }
 }
 
 const AUTO_RETRY_ATTEMPTS = 2;
@@ -1148,9 +1175,10 @@ function render(){
       }
 
       // Auto-load every thumbnail in this month right away (no more waiting
-      // for scroll). Once all of them have settled, automatically continue
-      // to the next month below — but only if the person already opened it,
-      // and only if it's small enough (under 850 videos) not to bog things down.
+      // for scroll). Priority-insert so this jumps ahead of any leftover
+      // backlog from other months. Once all of them have settled, automatically
+      // continue to the next month below — but only if the person already
+      // opened it, and only if it's small enough (under 850 videos).
       if(currentView === 'grid'){
         let remaining = linkedCards.length;
         const checkDone = ()=>{ if(remaining <= 0) tryChainNextMonth(monthDiv); };
@@ -1158,7 +1186,7 @@ function render(){
           checkDone();
         } else {
           linkedCards.forEach(({entry, card})=>{
-            queueThumbnail(entry, card, ()=>{ remaining--; checkDone(); });
+            queueThumbnail(entry, card, ()=>{ remaining--; checkDone(); }, monthDiv, true);
           });
         }
       }
@@ -1170,8 +1198,14 @@ function render(){
     if(shouldAutoOpen) buildBody();
 
     monthDiv.querySelector('.month-head').addEventListener('click', ()=>{
+      const opening = !monthDiv.classList.contains('open');
       monthDiv.classList.toggle('open');
-      if(monthDiv.classList.contains('open')) buildBody();
+      if(opening){
+        buildBody(); // no-op if already built
+        resumeMonth(monthDiv);
+      } else {
+        pauseMonth(monthDiv);
+      }
     });
 
     results.appendChild(monthDiv);
