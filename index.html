@@ -507,26 +507,14 @@
     z-index:2;
     max-width:100%;
   }
-  .tiktok-crop{
+  .tiktok-embed-wrap{
     position:relative;
     z-index:2;
-    height:100%;
     max-height:100%;
-    /* Visible window is narrower than the embed itself — the extra width
-       (where TikTok's own icon sidebar sits) gets clipped off to the right. */
-    width:min(78vw, 300px);
-    overflow:hidden;
+    max-width:100%;
     display:flex;
     align-items:center;
-    justify-content:flex-start;
-  }
-  .tiktok-crop-inner{
-    /* Rendered wider than the visible crop box on purpose — see above. */
-    width:min(100vw, 385px);
-    flex-shrink:0;
-  }
-  .tiktok-crop-inner iframe{
-    width:100% !important;
+    justify-content:center;
   }
   .feed-placeholder{
     color:var(--ink-faint);
@@ -651,7 +639,7 @@
     <div id="testStatus" style="display:none;margin-top:14px;padding:12px 14px;border:1px solid var(--gold-soft);border-radius:10px;background:var(--gold-bg);color:var(--gold);font-size:12px;word-break:break-word;"></div>
     <div id="diagPanel" style="display:none;margin-top:14px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--panel-2);color:var(--ink-dim);font-size:11px;line-height:1.7;white-space:pre-wrap;"></div>
 
-    <p class="dev-version">beta v1 — For You feed, light mode</p>
+    <p class="dev-version">beta v1.1 — reverted feed embed crop (kept breaking + against TikTok's embed terms)</p>
   </div>
 </div>
 
@@ -1739,17 +1727,14 @@ function mountFeedEmbed(media, data){
     media.appendChild(bg);
   }
   if(data.html){
-    // TikTok's embed includes its own like/comment/share sidebar to the right
-    // of the video, baked into their iframe (cross-origin — we can't restyle
-    // or remove it directly). Best we can do: render it slightly wider than
-    // the visible area and clip the excess, which is where that sidebar sits.
-    const crop = document.createElement('div');
-    crop.className = 'tiktok-crop';
+    // Show TikTok's embed as they intend it — their engagement icons and
+    // branding are part of what their embed terms require staying visible.
+    // Our own design lives in everything around this: the feed itself, the
+    // captions, badges, and browsing experience.
     const wrap = document.createElement('div');
-    wrap.className = 'tiktok-crop-inner';
+    wrap.className = 'tiktok-embed-wrap';
     wrap.innerHTML = data.html;
-    crop.appendChild(wrap);
-    media.appendChild(crop);
+    media.appendChild(wrap);
     const s = document.createElement('script');
     s.async = true;
     s.src = 'https://www.tiktok.com/embed.js';
