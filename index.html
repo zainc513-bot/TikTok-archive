@@ -507,6 +507,27 @@
     z-index:2;
     max-width:100%;
   }
+  .tiktok-crop{
+    position:relative;
+    z-index:2;
+    height:100%;
+    max-height:100%;
+    /* Visible window is narrower than the embed itself — the extra width
+       (where TikTok's own icon sidebar sits) gets clipped off to the right. */
+    width:min(78vw, 300px);
+    overflow:hidden;
+    display:flex;
+    align-items:center;
+    justify-content:flex-start;
+  }
+  .tiktok-crop-inner{
+    /* Rendered wider than the visible crop box on purpose — see above. */
+    width:min(100vw, 385px);
+    flex-shrink:0;
+  }
+  .tiktok-crop-inner iframe{
+    width:100% !important;
+  }
   .feed-placeholder{
     color:var(--ink-faint);
     font-size:12px;
@@ -1718,11 +1739,17 @@ function mountFeedEmbed(media, data){
     media.appendChild(bg);
   }
   if(data.html){
+    // TikTok's embed includes its own like/comment/share sidebar to the right
+    // of the video, baked into their iframe (cross-origin — we can't restyle
+    // or remove it directly). Best we can do: render it slightly wider than
+    // the visible area and clip the excess, which is where that sidebar sits.
+    const crop = document.createElement('div');
+    crop.className = 'tiktok-crop';
     const wrap = document.createElement('div');
-    wrap.style.position = 'relative';
-    wrap.style.zIndex = '2';
+    wrap.className = 'tiktok-crop-inner';
     wrap.innerHTML = data.html;
-    media.appendChild(wrap);
+    crop.appendChild(wrap);
+    media.appendChild(crop);
     const s = document.createElement('script');
     s.async = true;
     s.src = 'https://www.tiktok.com/embed.js';
