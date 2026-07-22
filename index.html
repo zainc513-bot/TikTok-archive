@@ -639,7 +639,7 @@
     <div id="testStatus" style="display:none;margin-top:14px;padding:12px 14px;border:1px solid var(--gold-soft);border-radius:10px;background:var(--gold-bg);color:var(--gold);font-size:12px;word-break:break-word;"></div>
     <div id="diagPanel" style="display:none;margin-top:14px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--panel-2);color:var(--ink-dim);font-size:11px;line-height:1.7;white-space:pre-wrap;"></div>
 
-    <p class="dev-version">beta v1.1 — reverted feed embed crop (kept breaking + against TikTok's embed terms)</p>
+    <p class="dev-version">beta v1.2 — chunked/async import to prevent the "problem repeatedly occurred" crash on large imports</p>
   </div>
 </div>
 
@@ -1075,69 +1075,95 @@ function parseDateSafe(d){
   return isNaN(dt) ? d : s; // return the (possibly fixed) string; callers re-parse with new Date()
 }
 
-function normalize(raw){
+function processOneItem(item, type, map){
+  const link = getField(item, ['Link','URL','VideoID','video_id','id']);
+  const date = parseDateSafe(getField(item, ['Date','CreateTime','create_time','favorited_date','repost_date']));
+  const postedDate = parseDateSafe(getField(item, ['PostedDate','posted_date','video_create_time']));
+  const caption = getField(item, ['Description','caption','Caption','Title','SearchTerm']) || '';
+  const sound = getField(item, ['Sound','music']);
+  const explicitType = item.type;
+
+  const key = link || (caption + '|' + date) || JSON.stringify(item);
+  const hashtags = extractHashtags(caption);
+
+  if(!map.has(key)){
+    map.set(key, {
+      id: key,
+      link: link || null,
+      date: date || null,
+      postedDate: postedDate || null,
+      caption: caption || '',
+      hashtags,
+      sound,
+      types: new Set()
+    });
+  }
+  const entry = map.get(key);
+  if(explicitType === 'both'){
+    entry.types.add('repost'); entry.types.add('favorite');
+  } else if(explicitType){
+    entry.types.add(explicitType);
+  } else {
+    entry.types.add(type);
+  }
+  if(!entry.date && date) entry.date = date;
+  if(!entry.postedDate && postedDate) entry.postedDate = postedDate;
+  if(!entry.caption && caption) entry.caption = caption;
+  if(entry.hashtags.length === 0 && hashtags.length) entry.hashtags = hashtags;
+}
+
+function yieldToBrowser(){
+  return new Promise(resolve=>setTimeout(resolve, 0));
+}
+
+const NORMALIZE_CHUNK_SIZE = 1500;
+
+// Processes items in small batches with a breathing-room pause between each,
+// instead of one giant synchronous loop — large imports (tens of thousands of
+// items) could otherwise block the main thread long enough that iOS Safari
+// decides the page is unresponsive and force-reloads it.
+async function normalizeAsync(raw, onProgress){
   let arrays = [];
   if(Array.isArray(raw) && raw.every(x=>x && x.type)){
     arrays.push({path:'flat', items: raw});
   } else {
     findCandidateArrays(raw, '', arrays, true);
     if(arrays.length === 0){
-      // Nothing matched our known TikTok section names — fall back to a looser
-      // scan so custom/non-standard JSON still works.
       findCandidateArrays(raw, '', arrays, false);
     }
   }
 
   const map = new Map();
+  const totalItems = arrays.reduce((sum, a)=>sum + a.items.length, 0);
+  let processed = 0;
 
-  arrays.forEach(({path, items})=>{
+  for(const {path, items} of arrays){
     let type = 'other';
     if(path.includes('repost')) type = 'repost';
     else if(path.includes('favorite') || path.includes('like')) type = 'favorite';
 
-    items.forEach(item=>{
-      const link = getField(item, ['Link','URL','VideoID','video_id','id']);
-      const date = parseDateSafe(getField(item, ['Date','CreateTime','create_time','favorited_date','repost_date']));
-      const postedDate = parseDateSafe(getField(item, ['PostedDate','posted_date','video_create_time']));
-      const caption = getField(item, ['Description','caption','Caption','Title','SearchTerm']) || '';
-      const sound = getField(item, ['Sound','music']);
-      const explicitType = item.type;
-
-      const key = link || (caption + '|' + date) || JSON.stringify(item);
-      const hashtags = extractHashtags(caption);
-
-      if(!map.has(key)){
-        map.set(key, {
-          id: key,
-          link: link || null,
-          date: date || null,
-          postedDate: postedDate || null,
-          caption: caption || '',
-          hashtags,
-          sound,
-          types: new Set()
-        });
+    for(let i = 0; i < items.length; i++){
+      processOneItem(items[i], type, map);
+      processed++;
+      if(processed % NORMALIZE_CHUNK_SIZE === 0){
+        if(onProgress) onProgress(processed, totalItems);
+        await yieldToBrowser();
       }
-      const entry = map.get(key);
-      if(explicitType === 'both'){
-        entry.types.add('repost'); entry.types.add('favorite');
-      } else if(explicitType){
-        entry.types.add(explicitType);
-      } else {
-        entry.types.add(type);
-      }
-      if(!entry.date && date) entry.date = date;
-      if(!entry.postedDate && postedDate) entry.postedDate = postedDate;
-      if(!entry.caption && caption) entry.caption = caption;
-      if(entry.hashtags.length === 0 && hashtags.length) entry.hashtags = hashtags;
-    });
-  });
+    }
+  }
+  if(onProgress) onProgress(processed, totalItems);
 
   return [...map.values()].map(e=>({...e, types: [...e.types]}));
 }
 
-function loadData(raw){
-  ALL = normalize(raw);
+async function loadData(raw){
+  showStatus('Processing your data...', false);
+  await yieldToBrowser(); // let the "Processing..." message actually paint first
+  ALL = await normalizeAsync(raw, (done, total)=>{
+    if(total > 3000){
+      showStatus('Processing your data... ' + done.toLocaleString() + ' / ' + total.toLocaleString(), false);
+    }
+  });
   document.getElementById('search').value = '';
   document.getElementById('hashtag').value = '';
   render();
@@ -1235,7 +1261,7 @@ async function testConnection(){
   showTestStatus('Tested with: ' + testUrl.slice(0,60) + (anyOk ? ' — SUCCESS. ' : ' — ALL FAILED. ') + results.join(' | '), !anyOk);
 }
 
-function loadSample(){
+async function loadSample(){
   const sample = {
     Activity: {
       "Favorite Videos": {
@@ -1256,7 +1282,7 @@ function loadSample(){
       }
     }
   };
-  loadData(sample);
+  await loadData(sample);
 }
 
 function showStatus(msg, isError){
@@ -1276,10 +1302,10 @@ document.getElementById('fileInput').addEventListener('change', e=>{
   }
   showStatus('Reading ' + file.name + ' ...', false);
   const reader = new FileReader();
-  reader.onload = ev=>{
+  reader.onload = async ev=>{
     try{
       const json = JSON.parse(ev.target.result);
-      loadData(json);
+      await loadData(json);
       if(ALL.length === 0){
         showStatus('The file loaded, but no reposts, favorites, or likes were found in it. Make sure you requested those sections in your TikTok data export.', true);
       } else {
