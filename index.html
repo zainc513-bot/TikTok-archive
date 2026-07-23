@@ -721,7 +721,7 @@
     <div id="testStatus" style="display:none;margin-top:14px;padding:12px 14px;border:1px solid var(--gold-soft);border-radius:10px;background:var(--gold-bg);color:var(--gold);font-size:12px;word-break:break-word;"></div>
     <div id="diagPanel" style="display:none;margin-top:14px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--panel-2);color:var(--ink-dim);font-size:11px;line-height:1.7;white-space:pre-wrap;"></div>
 
-    <p class="dev-version">beta v1.3 — warm animated aura background + button/card hover glow</p>
+    <p class="dev-version">beta v1.4 — detect deleted/private videos and quit immediately instead of retrying</p>
   </div>
 </div>
 
@@ -832,6 +832,15 @@ async function tryOneProxy(p, oembed, link){
       netStats.perProxy[p.name].rateLimited++;
       throw new Error('429');
     }
+    if(r.status === 404){
+      // A clean 404 from our own function means TikTok itself said this video
+      // doesn't exist (deleted/private/removed) — not a proxy hiccup. No point
+      // retrying or racing other proxies for a video that's actually gone.
+      netStats.perProxy[p.name].fail++;
+      const err = new Error('video unavailable');
+      err.permanent = true;
+      throw err;
+    }
     if(!r.ok) throw new Error('HTTP ' + r.status);
     const data = await p.parse(r);
     if(!data || !data.thumbnail_url) throw new Error('no thumbnail');
@@ -839,7 +848,7 @@ async function tryOneProxy(p, oembed, link){
     return data;
   }catch(e){
     clearTimeout(timer);
-    if(e.message !== '429') netStats.perProxy[p.name].fail++;
+    if(e.message !== '429' && !e.permanent) netStats.perProxy[p.name].fail++;
     throw e;
   }
 }
@@ -856,7 +865,10 @@ async function fetchOembedWithFallback(link){
   if(own && proxyCooldownUntil[own.name] <= now){
     try{
       return await tryOneProxy(own, oembed, link);
-    }catch(e){ /* fall through to full fallback race below */ }
+    }catch(e){
+      if(e.permanent) throw e; // confirmed dead video — don't bother falling back
+      /* otherwise fall through to full fallback race below */
+    }
   }
 
   const usable = PROXIES.filter(p=>proxyCooldownUntil[p.name] <= now);
@@ -974,6 +986,7 @@ async function worker(){
         break;
       }catch(e){
         lastErr = e;
+        if(e.permanent) break; // confirmed dead video — quit here, don't burn more time on it
       }
     }
 
@@ -988,9 +1001,10 @@ async function worker(){
       }
       applyThumbnail(cardEl, entry, {status:'done', data});
     } else {
-      oembedCache.set(entry.link, {status:'error'});
+      const status = (lastErr && lastErr.permanent) ? 'unavailable' : 'error';
+      oembedCache.set(entry.link, {status});
       netStats.fail++;
-      applyThumbnail(cardEl, entry, {status:'error'});
+      applyThumbnail(cardEl, entry, {status});
     }
     if(onSettled) onSettled();
   }
@@ -1019,6 +1033,9 @@ function applyThumbnail(cardEl, entry, cached){
     playIcon.className = 'play-icon';
     playIcon.innerHTML = '&#9654;';
     cardEl.appendChild(playIcon);
+  } else if(cached.status === 'unavailable'){
+    cardEl.dataset.status = 'unavailable';
+    ph.innerHTML = '<span>Video deleted or made private</span><span style="font-size:9px">Tap the &#8599; to check on TikTok</span>';
   } else {
     cardEl.dataset.status = 'error';
     ph.innerHTML = '<span>Preview unavailable</span><span style="font-size:9px">Tap to retry, or tap the &#8599; to open on TikTok</span>';
