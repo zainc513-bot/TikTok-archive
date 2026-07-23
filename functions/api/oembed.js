@@ -26,8 +26,12 @@ export async function onRequestGet(context) {
     });
 
     if (!upstream.ok) {
+      // Pass through a real 404 so the client knows the video is actually
+      // gone (deleted/private) rather than treating it like a transient
+      // proxy hiccup worth retrying.
+      const status = upstream.status === 404 ? 404 : 502;
       return new Response(JSON.stringify({ error: 'upstream error', status: upstream.status }), {
-        status: 502,
+        status: status,
         headers: { 'Content-Type': 'application/json' }
       });
     }
@@ -48,3 +52,4 @@ export async function onRequestGet(context) {
     });
   }
 }
+
