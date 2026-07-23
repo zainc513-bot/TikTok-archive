@@ -36,6 +36,58 @@
     font-family:'Space Mono', monospace;
     font-size:13px;
     -webkit-text-size-adjust:100%;
+    position:relative;
+  }
+  .aura-bg{
+    position:fixed;
+    inset:0;
+    z-index:0;
+    overflow:hidden;
+    pointer-events:none;
+  }
+  .aura-blob{
+    position:absolute;
+    border-radius:50%;
+    filter:blur(70px);
+    opacity:0.55;
+    will-change:transform;
+  }
+  .aura-1{
+    width:52vw; height:52vw;
+    max-width:520px; max-height:520px;
+    top:-14%; left:-12%;
+    background:radial-gradient(circle, rgba(200,120,40,0.5), rgba(200,120,40,0) 70%);
+    animation:auraFloat1 26s ease-in-out infinite;
+  }
+  .aura-2{
+    width:46vw; height:46vw;
+    max-width:460px; max-height:460px;
+    top:32%; right:-16%;
+    background:radial-gradient(circle, rgba(168,104,31,0.45), rgba(168,104,31,0) 70%);
+    animation:auraFloat2 32s ease-in-out infinite;
+  }
+  .aura-3{
+    width:40vw; height:40vw;
+    max-width:400px; max-height:400px;
+    bottom:-10%; left:22%;
+    background:radial-gradient(circle, rgba(226,159,92,0.45), rgba(226,159,92,0) 70%);
+    animation:auraFloat3 22s ease-in-out infinite;
+  }
+  @keyframes auraFloat1{
+    0%, 100%{ transform:translate(0,0) scale(1); }
+    50%{ transform:translate(6vw, 8vh) scale(1.12); }
+  }
+  @keyframes auraFloat2{
+    0%, 100%{ transform:translate(0,0) scale(1); }
+    50%{ transform:translate(-7vw, -6vh) scale(0.9); }
+  }
+  @keyframes auraFloat3{
+    0%, 100%{ transform:translate(0,0) scale(1); }
+    50%{ transform:translate(5vw, -7vh) scale(1.08); }
+  }
+  #libraryView, .bottom-nav, .dev-overlay{ position:relative; z-index:1; }
+  @media (prefers-reduced-motion: reduce){
+    .aura-blob{ animation:none; }
   }
   .wrap{max-width:1100px;margin:0 auto;padding:32px 24px 88px;}
   .masthead{
@@ -89,8 +141,14 @@
     box-shadow:var(--shadow);
     padding:0;
     flex-shrink:0;
+    transition:box-shadow .18s, border-color .18s, color .18s, transform .12s;
   }
-  .icon-btn:hover{border-color:var(--gold);color:var(--gold);}
+  .icon-btn:hover{
+    border-color:var(--gold);
+    color:var(--gold);
+    box-shadow:0 0 0 4px rgba(168,104,31,0.12), 0 6px 16px rgba(168,104,31,0.2);
+    transform:translateY(-1px);
+  }
   .dev-overlay{
     display:none;
     position:fixed;
@@ -185,11 +243,20 @@
     appearance:none;
     touch-action:manipulation;
     box-shadow:var(--shadow);
+    transition:box-shadow .18s, border-color .18s, color .18s, transform .12s, background .18s;
   }
-  button:hover, .btn:hover{border-color:var(--gold);color:var(--gold);}
+  button:hover, .btn:hover{
+    border-color:var(--gold);
+    color:var(--gold);
+    box-shadow:0 0 0 4px rgba(168,104,31,0.12), 0 6px 18px rgba(168,104,31,0.18);
+    transform:translateY(-1px);
+  }
   button.primary, .btn.primary{background:var(--gold); border-color:var(--gold); color:#fff; font-weight:700;}
-  button.primary:hover, .btn.primary:hover{background:var(--gold-soft); border-color:var(--gold-soft); color:#fff;}
-  button:active, .btn:active{background:var(--gold-bg);}
+  button.primary:hover, .btn.primary:hover{
+    background:var(--gold-soft); border-color:var(--gold-soft); color:#fff;
+    box-shadow:0 0 0 5px rgba(168,104,31,0.18), 0 8px 22px rgba(168,104,31,0.3);
+  }
+  button:active, .btn:active{background:var(--gold-bg); transform:translateY(0);}
   .filter-row{
     display:flex;
     gap:8px;
@@ -205,6 +272,12 @@
     cursor:pointer;
     color:var(--ink-dim);
     user-select:none;
+    transition:box-shadow .18s, border-color .18s, color .18s;
+  }
+  .chip:hover{
+    border-color:var(--gold-soft);
+    color:var(--gold);
+    box-shadow:0 0 0 3px rgba(168,104,31,0.10);
   }
   .chip.active{border-color:var(--gold);color:var(--gold);background:var(--gold-bg);}
   .divider{width:1px;height:20px;background:var(--line);margin:0 4px;}
@@ -289,7 +362,11 @@
     overflow:hidden;
     cursor:pointer;
     box-shadow:var(--shadow);
-    transition:transform .12s, box-shadow .12s;
+    transition:transform .12s, box-shadow .18s, border-color .18s;
+  }
+  .card:hover{
+    border-color:var(--gold-soft);
+    box-shadow:0 0 0 3px rgba(168,104,31,0.10), var(--shadow-lift);
   }
   .card:active{transform:scale(0.98);}
   .card img{
@@ -565,6 +642,11 @@
 
 </head>
 <body>
+<div class="aura-bg" aria-hidden="true">
+  <span class="aura-blob aura-1"></span>
+  <span class="aura-blob aura-2"></span>
+  <span class="aura-blob aura-3"></span>
+</div>
 
 <div id="libraryView" class="wrap">
 
@@ -639,7 +721,7 @@
     <div id="testStatus" style="display:none;margin-top:14px;padding:12px 14px;border:1px solid var(--gold-soft);border-radius:10px;background:var(--gold-bg);color:var(--gold);font-size:12px;word-break:break-word;"></div>
     <div id="diagPanel" style="display:none;margin-top:14px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--panel-2);color:var(--ink-dim);font-size:11px;line-height:1.7;white-space:pre-wrap;"></div>
 
-    <p class="dev-version">beta v1.2 — chunked/async import to prevent the "problem repeatedly occurred" crash on large imports</p>
+    <p class="dev-version">beta v1.3 — warm animated aura background + button/card hover glow</p>
   </div>
 </div>
 
